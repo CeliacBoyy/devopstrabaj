@@ -1,0 +1,33 @@
+name: CI
+
+# Se ejecuta con cada push a develop y con cada pull request hacia main
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar pruebas
+        run: pytest -v
+
+      - name: Registrar trazabilidad
+        run: |
+          echo "Rama:   ${GITHUB_REF_NAME}"
+          echo "Commit: ${GITHUB_SHA}"
+          echo "Evento: ${GITHUB_EVENT_NAME}"

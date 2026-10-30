@@ -35,3 +35,9 @@ def obtener_tarea(tarea_id: int):
     if tarea_id not in _db["tareas"]:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
     return _db["tareas"][tarea_id]
+
+@app.delete("/tareas/{tarea_id}", status_code=204)
+def eliminar_tarea(tarea_id: int):
+    if tarea_id not in _db["tareas"]:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    del _db["tareas"][tarea_id]
