@@ -41,3 +41,12 @@ def test_obtener_tarea():
 
 def test_obtener_tarea_inexistente():
     assert cliente.get("/tareas/99").status_code == 404
+
+def test_eliminar_tarea():
+    cliente.post("/tareas", json={"titulo": "A"})
+    assert cliente.delete("/tareas/1").status_code == 204
+    assert cliente.get("/tareas/1").status_code == 404
+
+
+def test_eliminar_tarea_inexistente():
+    assert cliente.delete("/tareas/99").status_code == 404    
