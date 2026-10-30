@@ -50,3 +50,7 @@ def test_eliminar_tarea():
 
 def test_eliminar_tarea_inexistente():
     assert cliente.delete("/tareas/99").status_code == 404    
+
+def test_titulo_vacio_es_rechazado():
+    r = cliente.post("/tareas", json={"titulo": ""})
+    assert r.status_code == 422
