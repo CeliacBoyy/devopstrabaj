@@ -144,6 +144,6 @@ del repositorio.
 
 ## Conclusiones y reflexión individual
 
-### Reflexión de _Benjamin Tapia_
+### Reflexión de _Benjamin Tapia
 
 _Aprendí a utilizar el workflow, actions, entre otras funciones, además de poder entender de mejor manera el funcionamiento de GITHUB_
