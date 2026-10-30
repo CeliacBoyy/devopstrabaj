@@ -139,12 +139,11 @@ del repositorio.
 ## Declaración de uso de IA
 
 - Herramienta: Claude (Anthropic).
-- Uso: _(completar: por ejemplo, apoyo para generar el proyecto base, explicar comandos de Git y
-  borradores de configuración, todo revisado y validado por mí)_
-- Cita: _(completar según el formato de https://bibliotecas.duoc.cl/ia)_
+- Uso: El usado dado a la IA fue apoyo para generar el proyecto base, explicar comandos de Git y
+  borradores de configuración, todo revisado y validado por mí_
 
 ## Conclusiones y reflexión individual
 
-### Reflexión de _(tu nombre)_
+### Reflexión de _Benjamin Tapia_
 
-_(escribe aquí con tus palabras qué aprendiste y cuál fue tu contribución)_
+_Aprendí a utilizar el workflow, actions, entre otras funciones, además de poder entender de mejor manera el funcionamiento de GITHUB_
