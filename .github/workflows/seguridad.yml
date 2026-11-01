@@ -33,6 +33,6 @@ jobs:
 
       # Bloqueo: falla si hay problemas altos en el codigo fuente
       - name: Analizar el codigo con Snyk Code
-        run: snyk code test --severity-threshold=high
+        run: snyk code test --org=${{ secrets.SNYK_ORG }} --severity-threshold=high
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
