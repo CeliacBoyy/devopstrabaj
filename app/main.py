@@ -17,7 +17,7 @@ def estado():
     return {"status": "ok"}
 
 
-@app.post("/tareas", status_code=201)
+@app.post("/tareas", status_code=200)
 def crear_tarea(tarea: TareaEntrada):
     tarea_id = _db["siguiente_id"]
     _db["siguiente_id"] += 1
