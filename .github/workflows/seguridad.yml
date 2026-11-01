@@ -1,0 +1,38 @@
+name: Seguridad
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  snyk:
+    name: Analisis con Snyk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Instalar Snyk CLI
+        run: npm install -g snyk
+
+      # Bloqueo: falla si hay vulnerabilidades altas o criticas en las dependencias
+      - name: Escanear dependencias con Snyk
+        run: snyk test --file=requirements.txt --package-manager=pip --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # Bloqueo: falla si hay problemas altos en el codigo fuente
+      - name: Analizar el codigo con Snyk Code
+        run: snyk code test --org=${{ secrets.SNYK_ORG }} --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
