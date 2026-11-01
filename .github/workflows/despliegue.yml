@@ -16,7 +16,7 @@ jobs:
       imagen: ${{ steps.meta.outputs.imagen }}
     steps:
       - name: Descargar el codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Definir nombre de la imagen
         id: meta
@@ -42,7 +42,7 @@ jobs:
       API_IMAGE: ${{ needs.publicar.outputs.imagen }}
     steps:
       - name: Descargar el codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Iniciar sesion en GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
