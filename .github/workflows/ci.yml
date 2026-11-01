@@ -11,7 +11,7 @@ jobs:
     name: Pruebas unitarias y cobertura
     runs-on: ubuntu-latest
     steps:
-      - name: Descargar el código
+      - name: Descargar el codigo
         uses: actions/checkout@v4
 
       - name: Configurar Python
@@ -24,20 +24,29 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements-dev.txt
 
-      # Política de calidad: el pipeline falla si la cobertura baja del 80 %
-      - name: Ejecutar pruebas con cobertura mínima
+      # Politica de calidad: el pipeline falla si la cobertura baja del 80 %
+      - name: Ejecutar pruebas con cobertura minima
         run: pytest -v --cov=app --cov-report=term-missing --cov-fail-under=80
 
   imagen:
-    name: Construir y probar la imagen Docker
+    name: Construir, escanear y probar la imagen
     runs-on: ubuntu-latest
     needs: pruebas
     steps:
-      - name: Descargar el código
+      - name: Descargar el codigo
         uses: actions/checkout@v4
 
       - name: Construir imagen
         run: docker build -t tareas-api:${{ github.sha }} .
+
+      # Bloqueo de seguridad: falla si hay vulnerabilidades altas o criticas con arreglo disponible
+      - name: Escanear la imagen con Trivy
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --no-progress --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            tareas-api:${{ github.sha }}
 
       - name: Levantar contenedor y probar /health
         run: |
