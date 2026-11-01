@@ -41,13 +41,12 @@ jobs:
 
       # Bloqueo de seguridad: falla si hay vulnerabilidades altas o críticas con arreglo disponible
       - name: Escanear la imagen con Trivy
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: tareas-api:${{ github.sha }}
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+	run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --no-progress --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            tareas-api:${{ github.sha }}
 
       - name: Levantar contenedor y probar /health
         run: |
