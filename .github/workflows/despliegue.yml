@@ -1,0 +1,81 @@
+name: Despliegue
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publicar:
+    name: Publicar imagen en GHCR
+    runs-on: ubuntu-latest
+    outputs:
+      imagen: ${{ steps.meta.outputs.imagen }}
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Definir nombre de la imagen
+        id: meta
+        run: echo "imagen=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Iniciar sesion en GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Construir y publicar la imagen
+        run: |
+          docker build \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            -t ${{ steps.meta.outputs.imagen }} .
+          docker push ${{ steps.meta.outputs.imagen }}
+
+  desplegar:
+    name: Desplegar con Docker Compose
+    runs-on: ubuntu-latest
+    needs: publicar
+    environment: produccion
+    env:
+      API_IMAGE: ${{ needs.publicar.outputs.imagen }}
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Iniciar sesion en GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Descargar la imagen publicada y desplegar
+        run: |
+          docker compose pull api
+          docker compose up -d --no-build
+
+      - name: Prueba de humo
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fs http://localhost:8080/health; then
+              echo
+              echo "Despliegue sano"
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose logs
+          exit 1
+
+      - name: Verificar trazabilidad
+        run: |
+          docker compose ps
+          REV=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$API_IMAGE")
+          echo "Imagen desplegada: $API_IMAGE"
+          echo "Commit de origen:  $REV"
+          echo "### Despliegue" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Imagen: \`$API_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`$REV\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rama: \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apagar el entorno simulado
+        if: always()
+        run: docker compose down
