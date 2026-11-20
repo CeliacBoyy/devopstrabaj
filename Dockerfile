@@ -1,5 +1,5 @@
 # Imagen base liviana de Python (slim = más pequeña y con menos superficie de ataque)
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Evita archivos .pyc y muestra los logs al instante
 ENV PYTHONDONTWRITEBYTECODE=1 \
