@@ -32,6 +32,46 @@ jobs:
             --label org.opencontainers.image.revision=${{ github.sha }} \
             -t ${{ steps.meta.outputs.imagen }} .
           docker push ${{ steps.meta.outputs.imagen }}
+    kubernetes:
+    name: Desplegar en Kubernetes (kind)
+    runs-on: ubuntu-latest
+    needs: publicar
+    env:
+      IMAGEN: ${{ needs.publicar.outputs.imagen }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Iniciar sesion en GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Crear cluster Kubernetes (kind)
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: tareas
+
+      - name: Cargar la imagen publicada en el cluster
+        run: |
+          docker pull "$IMAGEN"
+          kind load docker-image "$IMAGEN" --name tareas
+
+      - name: Aplicar manifiestos con la imagen del commit
+        run: |
+          sed "s|image: tareas-api:local|image: $IMAGEN|" k8s/api.yaml | kubectl apply -f -
+          kubectl -n tareas rollout status deployment/tareas-api --timeout=120s
+
+      - name: Prueba de humo en el cluster
+        run: |
+          kubectl -n tareas port-forward svc/tareas-api 8081:80 &
+          for i in $(seq 1 15); do
+            if curl -fs http://localhost:8081/health; then
+              echo
+              kubectl -n tareas get deploy,pods -o wide
+              exit 0
+            fi
+            sleep 2
+          done
+          kubectl -n tareas describe pods
+          exit 1
 
   desplegar:
     name: Desplegar con Docker Compose
