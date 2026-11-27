@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tareas-api
+  namespace: tareas
+  labels:
+    app: tareas-api
+spec:
+  selector:
+    matchLabels:
+      app: tareas-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
