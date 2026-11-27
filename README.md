@@ -44,6 +44,8 @@ docker compose down
 │   └── main.py
 ├── tests/                      # Pruebas automatizadas (pytest)
 │   └── test_api.py
+├── k8s/                        # Manifiestos de Kubernetes (Deployment, Service, ServiceMonitor)
+├── dashboards/                 # Dashboard de Grafana exportado (JSON)
 ├── .github/
 │   ├── dependabot.yml          # Actualización automática de dependencias
 │   └── workflows/
@@ -248,6 +250,29 @@ Finalmente, utilicé GitHub Actions para automatizar diferentes etapas del proye
 
 Al tratarse de un proyecto desarrollado de forma individual, estas herramientas también permitieron organizar mejor el trabajo y automatizar tareas que, de otra manera, deberían realizarse manualmente._
 
+## Observabilidad (Evaluación Parcial 3)
+
+### Dashboard de Grafana
+
+El dashboard **DASHBOARD DEVOPS** está versionado en el repositorio en
+`dashboards/grafana-dashboard-devops.json` (formato Grafana v2, exportado desde Grafana 13.3.2).
+Consulta a Prometheus, que recolecta las métricas de la API en Kubernetes mediante
+`k8s/servicemonitor.yaml` (scrape de `/metrics` cada 15 s).
+
+| Panel | Consulta PromQL | Para qué sirve en la toma de decisiones |
+|-------|-----------------|------------------------------------------|
+| Peticiones/seg | `sum(rate(http_requests_total{namespace="tareas"}[1m]))` | Carga real del servicio |
+| Errores 5xx | `sum(rate(http_requests_total{namespace="tareas",status="5xx"}[5m]))` | Detecta fallas tras un despliegue |
+| Latencia p95 | `histogram_quantile(0.95, ...http_request_duration_highr_seconds_bucket...)` | Degradación de rendimiento |
+| Tareas almacenadas | `tareas_total` | Métrica de negocio de la API |
+| Pods arriba | `sum(up{namespace="tareas"})` | Disponibilidad |
+| Uso de memoria (por pod) | `container_memory_working_set_bytes` | Ajustar `limits` del Deployment |
+| Antigüedad de despliegue | `time() - kube_pod_start_time` | Tiempo desde el último despliegue |
+| Uso de CPU (por pod) | `container_cpu_usage_seconds_total` | Ajustar `requests/limits` del Deployment |
+
+**Importar el dashboard:** en Grafana, *Dashboards → New → Import → Upload JSON file* y elegir
+`dashboards/grafana-dashboard-devops.json`; seleccionar el datasource `prometheus`.
+
 ## Declaración de uso de IA
 
 - Herramienta: Claude (Anthropic).
@@ -256,6 +281,6 @@ Al tratarse de un proyecto desarrollado de forma individual, estas herramientas 
 
 ## Conclusiones y reflexión individual
 
-### Reflexión de _Benjamin Tapia_
+### Reflexión de _Benjamin Tapia
 
 _Aprendí a utilizar el workflow, actions, entre otras funciones, además de poder entender de mejor manera el funcionamiento de GITHUB_
