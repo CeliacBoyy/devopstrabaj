@@ -54,3 +54,16 @@ def test_eliminar_tarea_inexistente():
 def test_titulo_vacio_es_rechazado():
     r = cliente.post("/tareas", json={"titulo": ""})
     assert r.status_code == 422
+
+
+def test_metricas_expuestas():
+    cliente.get("/health")
+    r = cliente.get("/metrics")
+    assert r.status_code == 200
+    assert "http_requests_total" in r.text
+    assert "tareas_total" in r.text
+
+
+def test_simular_error_devuelve_500():
+    cliente_sin_excepciones = TestClient(app, raise_server_exceptions=False)
+    assert cliente_sin_excepciones.get("/simular-error").status_code == 500

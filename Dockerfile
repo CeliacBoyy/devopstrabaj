@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Aplica los parches de seguridad del sistema operativo (corrige CVE en paquetes como zlib1g)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
 # Se copia primero requirements.txt para aprovechar la caché de Docker.
 # si las dependencias no cambian, no se reinstalan en cada build
 COPY requirements.txt .
