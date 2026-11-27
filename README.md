@@ -3,7 +3,8 @@
 API REST mínima para gestionar tareas, hecha con FastAPI. El foco de este repositorio no es la
 aplicación, sino el ciclo de vida completo del microservicio: control de versiones con GitFlow
 (Evaluación Parcial 1) y un pipeline CI/CD en GitHub Actions con contenedores, pruebas
-automatizadas, análisis de seguridad, despliegue automático y orquestación (Evaluación Parcial 2).
+automatizadas, análisis de seguridad, despliegue automático y orquestación (Evaluación Parcial 2),
+más observabilidad, dashboard y cumplimiento automatizado (Evaluación Parcial 3).
 
 ## Ejecución local
 
@@ -50,6 +51,12 @@ docker compose down
 │       ├── ci.yml              # Pruebas, cobertura, imagen y Trivy
 │       ├── seguridad.yml       # Análisis con Snyk
 │       └── despliegue.yml      # Publicación en GHCR y despliegue
+├── k8s/
+│   ├── api.yaml                # Namespace, Deployment (2 réplicas) y Service
+│   └── servicemonitor.yaml     # Le indica a Prometheus qué monitorear
+├── monitoring/
+│   └── dashboard-devops.json   # Dashboard de Grafana exportado
+├── docs/img/                   # Capturas de la documentación
 ├── Dockerfile                  # Imagen del microservicio
 ├── .dockerignore
 ├── docker-compose.yml          # Orquestación: api + proxy nginx
@@ -230,10 +237,6 @@ Cada despliegue se puede seguir de punta a punta:
 El historial se puede revisar con `git log --oneline --graph --all`, en la pestaña *Pull requests*,
 en *Actions*, en *Packages* y en *Deployments* del repositorio.
 
-### Limitaciones conocidas
-
-- Las tareas se guardan en memoria: no hay persistencia y se mantiene una sola réplica de `api`.
-
 ### Justificación de decisiones técnicas
 
 _Para el desarrollo del proyecto decidí utilizar Docker, ya que permite ejecutar la aplicación en un entorno controlado y facilita su funcionamiento en diferentes equipos. Además, el uso de contenedores permite mantener separadas las dependencias de la aplicación y simplifica el proceso de despliegue.
@@ -244,18 +247,198 @@ En cuanto a la calidad del código, se implementaron pruebas automatizadas y se 
 
 Para la seguridad utilicé Snyk como herramienta de análisis. Esta permite detectar posibles vulnerabilidades en las dependencias y en el código del proyecto, ayudando a identificar problemas antes de que la aplicación sea desplegada.
 
-Finalmente, utilicé GitHub Actions para automatizar diferentes etapas del proyecto, como la ejecución de pruebas y los análisis de seguridad. Esto permite validar los cambios de forma automática y mantener un proceso más ordenado durante el desarrollo y despliegue de la aplicación.
+Finalmente, utilicé GitHub Actions para automatizar diferentes etapas del proyecto, como la ejecución de pruebas y los análisis de seguridad. Esto permite validar los cambios de forma automática y mantener un proceso más ordenado durante el desarrollo y despliegue de la aplicación._
 
-Al tratarse de un proyecto desarrollado de forma individual, estas herramientas también permitieron organizar mejor el trabajo y automatizar tareas que, de otra manera, deberían realizarse manualmente._
+## Evaluación Parcial 3: Observabilidad, métricas y cumplimiento
+
+> Esta sección extiende el pipeline de la Evaluación Parcial 2 con monitoreo, dashboard,
+> políticas de cumplimiento y una demostración de que el pipeline se detiene ante fallas críticas.
+
+### 1. Monitoreo y logging (IE1)
+
+La aplicación expone telemetría por sí misma, y Prometheus y Grafana la recolectan y la muestran.
+
+| Elemento | Dónde está | Qué entrega |
+|----------|-----------|-------------|
+| Métricas HTTP | `app/main.py`, con `prometheus-fastapi-instrumentator`, endpoint `/metrics` | `http_requests_total` (peticiones y código de estado), `http_request_duration_highr_seconds` (latencia) |
+| Métrica propia | `app/main.py`, `Gauge("tareas_total")` | Cantidad de tareas almacenadas por pod |
+| Logs estructurados | `app/main.py`, clase `FormatoJson` y middleware | Una línea JSON por petición: `ts`, `level`, `logger`, `msg`, `method`, `path`, `status`, `duration_ms`. Los errores no controlados registran el *traceback*. `/health` y `/metrics` se excluyen para no generar ruido. |
+| Endpoint de prueba | `GET /simular-error` | Genera un error 500 a propósito para probar métricas, logs y el panel de errores |
+| Recolección | `k8s/servicemonitor.yaml` | Prometheus consulta `/metrics` de cada pod cada 15 s |
+| Visualización | Grafana | Dashboard `DASHBOARD DEVOPS` (ver sección 3) |
+
+```mermaid
+flowchart LR
+  A["API FastAPI<br/>/metrics + logs JSON"] -->|"scrape cada 15 s"| B["ServiceMonitor"]
+  B --> C["Prometheus"]
+  K["kube-state-metrics / cAdvisor<br/>(CPU, memoria, pods)"] --> C
+  C --> D["Grafana: DASHBOARD DEVOPS"]
+  A -->|"stdout"| L["kubectl logs (logs JSON)"]
+```
+
+**Instalación de Prometheus y Grafana** (kube-prometheus-stack con Helm, en un clúster local kind):
+
+```bash
+# 1. Clúster local
+kind create cluster --name tareas
+
+# 2. Prometheus + Grafana + kube-state-metrics
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install prometheus prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace
+
+# 3. Imagen y despliegue de la API
+docker build -t tareas-api:local .
+kind load docker-image tareas-api:local --name tareas
+kubectl apply -f k8s/api.yaml
+kubectl apply -f k8s/servicemonitor.yaml
+
+# 4. Acceso a Grafana (http://localhost:3000) y Prometheus (http://localhost:9090)
+kubectl -n monitoring port-forward svc/prometheus-grafana 3000:80
+kubectl -n monitoring port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090
+
+# Contraseña de Grafana (usuario: admin)
+kubectl -n monitoring get secret prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 -d
+```
+
+Grafana usa Prometheus como fuente de datos (viene preconfigurada por el chart). Los puertos
+8000 (API, donde Prometheus lee `/metrics`) y 3000 (interfaz de Grafana) corresponden a
+servicios distintos.
+
+**Disponibilidad:** el panel *Pods arriba* usa la métrica `up` de Prometheus; si un pod deja
+de responder `/metrics`, el valor baja.
+
+![Targets en Prometheus](docs/img/prometheus-targets.png)
+
+### 2. Despliegue en Kubernetes (IE2)
+
+Los manifiestos están en `k8s/`:
+
+- `api.yaml`: namespace `tareas`, `Deployment` con **2 réplicas**, `readinessProbe` y
+  `livenessProbe` sobre `/health`, `requests` (100m CPU, 128Mi) y `limits` (500m CPU, 256Mi),
+  `securityContext` endurecido (sin escalado de privilegios, sistema de archivos de solo lectura,
+  sin capabilities) y un `Service` en el puerto 80.
+- `servicemonitor.yaml`: le indica a Prometheus qué servicio y puerto monitorear.
+
+**Despliegue automatizado:** el job `kubernetes` de `.github/workflows/despliegue.yml` corre en un
+runner de GitHub (entorno cloud) cuando hay un push a `main`:
+
+1. Crea un clúster Kubernetes efímero con **kind**.
+2. Descarga la imagen publicada en GHCR (etiquetada con el SHA del commit) y la carga en el clúster.
+3. Aplica `k8s/api.yaml` reemplazando la imagen por la del commit.
+4. Espera el `rollout status` del Deployment.
+5. Ejecuta una prueba de humo sobre `/health` mediante `port-forward`.
+
+El `ServiceMonitor` se aplica en el clúster local donde corre Prometheus (kind), con
+`kubectl apply -f k8s/servicemonitor.yaml`. No se aplica en el job de GitHub Actions porque ese
+clúster efímero no tiene las CRD de Prometheus Operator. Para que Prometheus lo detecte, el
+ServiceMonitor lleva la etiqueta `release: prometheus` (el nombre del release de Helm).
+Se puede comprobar en Prometheus, en *Status > Targets*.
+
+### 3. Dashboard (IE3)
+
+Archivo exportado: [`monitoring/dashboard-devops.json`](monitoring/dashboard-devops.json).
+
+![Dashboard completo](docs/img/dashboard.png)
+
+| Panel | Consulta (PromQL) | Qué muestra |
+|-------|-------------------|-------------|
+| Peticiones/seg | `sum(rate(http_requests_total{namespace="tareas"}[1m]))` | Tráfico del servicio |
+| Errores 5xx | `sum(rate(http_requests_total{namespace="tareas",status="5xx"}[5m])) or vector(0)` | Errores del servidor por segundo |
+| Latencia p95 | `histogram_quantile(0.95, sum by (le) (rate(http_request_duration_highr_seconds_bucket{namespace="tareas"}[5m])))` | Tiempo de respuesta del 95 % de las peticiones |
+| Tareas almacenadas | `tareas_total` | Estado de la aplicación por pod |
+| Pods arriba | `sum(up{namespace="tareas"})` | Disponibilidad |
+| Uso de CPU (por pod) | `sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="tareas",container="api"}[5m]))` | Consumo de CPU |
+| Uso de memoria (por pod) | `sum by (pod) (container_memory_working_set_bytes{namespace="tareas",container="api"})` | Consumo de memoria |
+| Antigüedad de despliegue | `time() - kube_pod_start_time{namespace="tareas"}` | Segundos desde que arrancó cada pod |
+
+**Métricas del proceso CI/CD:**
+
+- **Tiempo de despliegue:** se ve en la duración de cada job del workflow `Despliegue` (*Actions*), y en
+  el dashboard como antigüedad de los pods desde el último despliegue.
+
+Estas dos métricas provienen de GitHub Actions y no de Prometheus, porque el runner es efímero.
+
+### 4. Políticas de cumplimiento (IE5)
+
+| Política | Herramienta | Cómo se aplica |
+|----------|-------------|----------------|
+| Nada entra a `main` ni `develop` sin revisión y checks | Branch protection de GitHub | Exige pull request y los checks `Pruebas unitarias y cobertura`, `Construir, escanear y probar la imagen` y `Analisis con Snyk` |
+| Calidad mínima de pruebas | pytest-cov | Falla si la cobertura baja del 80 % |
+| Dependencias y código sin vulnerabilidades altas | Snyk (`snyk test` y `snyk code test`) | `--severity-threshold=high` |
+| Imagen sin vulnerabilidades altas o críticas corregibles | Trivy | `--severity HIGH,CRITICAL --ignore-unfixed --exit-code 1` |
+| Dependencias al día | Dependabot | PR semanales hacia `develop` (pip, docker y Actions) |
+| Trazabilidad | Etiquetas OCI + SHA | Cada imagen en GHCR lleva `org.opencontainers.image.revision` y `.source` |
+
+![Branch protection](docs/img/branch-protection.png)
+![Snyk y Trivy en verde](docs/img/checks-verdes.png)
+
+### 5. Demostración: el pipeline se detiene ante una falla (IE6)
+
+
+**Versión A (cobertura):** se creó una rama desechable `feature/demo-falla-critica` en la que se
+eliminaron pruebas de `tests/test_api.py`, de modo que la cobertura bajó del umbral del 80 %. Resultado:
+
+- El check **Pruebas unitarias y cobertura** quedó en **rojo** (`--cov-fail-under=80`).
+- GitHub **bloqueó el botón de merge**, así que el cambio no puede llegar a `main` ni desplegarse.
+
+**Versión B (dependencia vulnerable):** se creó una rama desechable `feature/demo-falla-critica`
+que agrega la dependencia vulnerable `requests==2.19.0` a `requirements.txt`. Resultado:
+
+- El check **Analisis con Snyk** quedó en **rojo** (`--severity-threshold=high`).
+- GitHub **bloqueó el botón de merge**, así que el cambio no puede llegar a `main` ni desplegarse.
+- Pull request de la demostración (cerrado sin fusionar): https://github.com/CeliacBoyy/devopstrabaj/pull/N
+
+![PR bloqueado](docs/img/pr-bloqueado.png)
+
+El workflow de despliegue solo corre con un push a `main`, por lo que una falla en las validaciones
+protege el entorno de producción simulado.
+
+### 6. Integración en el pipeline y toma de decisiones (IE4)
+
+```mermaid
+flowchart LR
+  A["Commit / PR"] --> B["CI: pruebas y cobertura >= 80 %"]
+  A --> C["Snyk: dependencias y código"]
+  B --> D["Imagen + Trivy + /health"]
+  C --> E{"Checks en verde"}
+  D --> E
+  E -->|"No"| X["Merge bloqueado"]
+  E -->|"Sí"| F["Merge a main"]
+  F --> G["GHCR: imagen con SHA"]
+  G --> H["Despliegue Compose + Kubernetes (kind)"]
+  H --> I["Prometheus + Grafana"]
+  I -->|"Latencia, errores, CPU/memoria"| A
+```
+
+### 7. Limitaciones conocidas (actualización)
+
+* Las tareas se guardan en memoria por pod: con 2 réplicas cada pod tiene su propio contenido
+  (se ve en el panel *Tareas almacenadas*).
+* Los logs son JSON por salida estándar y se consultan con `kubectl logs`; no hay agregación central.
+* El clúster de pruebas del pipeline es efímero (kind en un runner de GitHub), no un clúster en producción.
+* La cobertura y el tiempo de despliegue no están en Prometheus; se consultan en GitHub Actions.
+
+---
 
 ## Declaración de uso de IA
 
-- Herramienta: Claude (Anthropic).
-- Uso: El usado dado a la IA fue apoyo para generar el proyecto base, explicar comandos de Git y
-  borradores de configuración, todo revisado y validado por mí_
+* Herramienta: Claude (Anthropic).
+* Uso en la Evaluación 3: Se utilizó inteligencia artificial como apoyo para organizar y estructurar la documentación del proyecto, comprender algunos conceptos relacionados con observabilidad, monitoreo y cumplimiento, y mejorar la redacción de las explicaciones técnicas. También sirvió como apoyo para comprender las consultas PromQL y la función de herramientas como Prometheus, Grafana, Snyk y Trivy.
+
+El desarrollo, configuración y ejecución de las herramientas fueron realizados y comprobados por el equipo en el proyecto. La información generada con apoyo de IA fue revisada y adaptada de acuerdo con lo que realmente se implementó. Las reflexiones personales representan la propia experiencia de cada integrante y aprendizaje durante el desarrollo de la evaluación.
 
 ## Conclusiones y reflexión individual
 
-### Reflexión de _Benjamin Tapia
+### Reflexión de Benjamin Tapia
 
-_Aprendí a utilizar el workflow, actions, entre otras funciones, además de poder entender de mejor manera el funcionamiento de GITHUB_
+Durante el desarrollo de esta evaluación pude comprender mejor la importancia de la observabilidad dentro de un proyecto de software y cómo no basta solamente con que una aplicación funcione, sino que también es necesario poder supervisar su comportamiento, detectar errores y conocer su estado en todo momento.
+
+Uno de los aprendizajes más importantes fue entender cómo trabajan en conjunto Prometheus y Grafana. Prometheus permite recopilar las métricas de la aplicación, mientras que Grafana facilita su visualización mediante dashboards, permitiendo identificar información como la cantidad de peticiones, los errores HTTP, los tiempos de respuesta y el consumo de recursos de los pods. Esto me ayudó a entender cómo se puede detectar un problema antes de que afecte gravemente el funcionamiento de una aplicación.
+
+También aprendí más sobre Kubernetes y la importancia de configurar correctamente los despliegues, las réplicas, las sondas de salud y los recursos asignados a cada contenedor. Además, pude comprender mejor cómo las herramientas de seguridad como Snyk y Trivy ayudan a detectar vulnerabilidades y cómo las políticas de GitHub permiten evitar que cambios que no cumplen con los requisitos lleguen a la rama principal.
+
+Personalmente, considero que una de las partes más importantes de esta evaluación fue comprender que un pipeline no solamente debe construir y desplegar una aplicación, sino que también debe ser capaz de detenerse cuando detecta un problema. Esto permite mantener un mayor control sobre la calidad y seguridad del software.
+
+En general, esta evaluación me permitió reforzar conocimientos de DevOps, monitoreo, automatización y seguridad, además de comprender cómo estas herramientas se complementan dentro de un flujo de trabajo real. Considero que fue una experiencia útil porque pude relacionar distintos conceptos que anteriormente conocía por separado y entender mejor su aplicación en un proyecto completo.
