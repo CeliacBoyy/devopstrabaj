@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tareas
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tareas-api
+  namespace: tareas
+  labels:
+    app: tareas-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tareas-api
+  template:
+    metadata:
+      labels:
+        app: tareas-api
+    spec:
+      containers:
+        - name: api
+          image: tareas-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tareas-api
+  namespace: tareas
+  labels:
+    app: tareas-api
+spec:
+  selector:
+    app: tareas-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
