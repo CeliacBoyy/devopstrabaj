@@ -15,7 +15,7 @@ def limpiar_db():
 def test_estado():
     r = cliente.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "caido"}
+    assert r.json() == {"status": "ok"}
 
 
 def test_crear_tarea():
